@@ -1,0 +1,84 @@
+{
+  "_meta": {
+    "version": "1.0",
+    "description": "Exception ontology for TrialFair. Rules suppress gating penalties when exclusions are scientifically justified."
+  },
+
+  "gate_pregnancy_exclusion": {
+    "allowed_if": [
+      {"condition": "teratogenic_drug", "reason": "FDA-required exclusion for drugs with known teratogenic risk"},
+      {"condition": "phase_1", "reason": "Phase 1 safety studies routinely exclude pregnancy per ICH E8"},
+      {"condition": "oncology", "reason": "Cytotoxic agents pose fetal risk; standard practice"}
+    ]
+  },
+
+  "gate_pregnancy_test_required": {
+    "allowed_if": [
+      {"condition": "teratogenic_drug", "reason": "Regulatory requirement for pregnancy testing"},
+      {"condition": "phase_1", "reason": "Standard safety monitoring in early phase trials"}
+    ]
+  },
+
+  "gate_wocbp_contraception_requirement": {
+    "allowed_if": [
+      {"condition": "teratogenic_drug", "reason": "Required to prevent fetal exposure"},
+      {"condition": "phase_1", "reason": "Standard in early development"}
+    ]
+  },
+
+  "gate_consent_capacity_restriction": {
+    "allowed_if": [
+      {"condition": "pediatric_trial", "reason": "Age-appropriate assent/consent requirements"},
+      {"condition": "complex_intervention", "reason": "Interventions requiring active participant engagement"}
+    ]
+  },
+
+  "gate_language_requirement": {
+    "allowed_if": [
+      {"condition": "patient_reported_outcomes", "reason": "PROs require language comprehension for validity"}
+    ]
+  },
+
+  "gate_technology_access_requirement": {
+    "allowed_if": [
+      {"condition": "digital_therapeutic", "reason": "App-based interventions require technology by design"},
+      {"condition": "decentralized_trial_design", "reason": "DCT design inherently requires technology"}
+    ]
+  },
+
+  "gate_insurance_requirement": {
+    "allowed_if": [
+      {"condition": "standard_of_care_costs", "reason": "Trial doesn't cover routine care costs"}
+    ]
+  },
+
+  "gate_travel_transport_requirement": {
+    "allowed_if": [
+      {"condition": "specialized_equipment", "reason": "Intervention requires equipment only at site"},
+      {"condition": "inpatient_required", "reason": "Trial requires hospitalization"}
+    ]
+  },
+
+  "gate_residency_citizenship_requirement": {
+    "allowed_if": [
+      {"condition": "long_term_follow_up", "reason": "Multi-year follow-up requires stable residence"},
+      {"condition": "regulatory_requirement", "reason": "Local regulatory authority restrictions"}
+    ]
+  },
+
+  "gate_substance_use_exclusion": {
+    "allowed_if": [
+      {"condition": "drug_interaction", "reason": "Known interaction between study drug and substances"},
+      {"condition": "hepatotoxic_drug", "reason": "Alcohol exclusion justified for liver-toxic agents"},
+      {"condition": "cns_active_drug", "reason": "CNS drugs may interact with substances"}
+    ]
+  },
+
+  "gate_health_status_exclusion": {
+    "allowed_if": [
+      {"condition": "healthy_volunteer_design", "reason": "PK/safety studies in healthy volunteers by design"},
+      {"condition": "phase_1_pk", "reason": "First-in-human PK studies"},
+      {"condition": "bioequivalence", "reason": "BE studies require healthy subjects"}
+    ]
+  }
+}

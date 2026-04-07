@@ -1,0 +1,855 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TrialFair - Clinical Trial Eligibility Auditor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .loading { opacity: 0.6; pointer-events: none; }
+        .gate-card { transition: all 0.2s ease; }
+        .evidence-text { font-family: 'Monaco', 'Menlo', monospace; font-size: 12px; }
+        .fade-in { animation: fadeIn 0.3s ease-in; }
+        @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { animation: spin 1s linear infinite; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <!-- Header -->
+    <header class="bg-gradient-to-r from-blue-900 to-blue-700 text-white py-6 px-4 shadow-lg">
+        <div class="max-w-5xl mx-auto">
+            <h1 class="text-3xl font-bold">TrialFair</h1>
+            <p class="text-blue-200 mt-1">Clinical Trial Eligibility Criteria Auditor</p>
+        </div>
+    </header>
+
+    <main class="max-w-5xl mx-auto p-4 md:p-6">
+        <!-- Tabs -->
+        <div class="flex border-b border-gray-200 mb-6">
+            <button onclick="showTab('input')" id="tab-input" class="px-6 py-3 font-medium border-b-2 border-blue-600 text-blue-600">
+                Analyze Trial
+            </button>
+            <button onclick="showTab('lookup')" id="tab-lookup" class="px-6 py-3 font-medium text-gray-500 hover:text-gray-700">
+                Lookup by NCT ID
+            </button>
+            <button onclick="showTab('results')" id="tab-results" class="px-6 py-3 font-medium text-gray-500 hover:text-gray-700 hidden">
+                Results
+            </button>
+        </div>
+
+        <!-- Input Tab -->
+        <div id="input-tab" class="space-y-6">
+            <!-- File Upload -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">📁 Upload Trial Document (Optional)</h2>
+                <div class="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-blue-400 transition-colors cursor-pointer" onclick="document.getElementById('file-upload').click()">
+                    <input type="file" id="file-upload" accept=".pdf,.txt,.json" class="hidden" onchange="handleFileUpload(event)">
+                    <p class="text-gray-600">Drop a PDF, TXT, or JSON file here or <span class="text-blue-600 font-medium">browse</span></p>
+                    <p class="text-sm text-gray-400 mt-1">We'll extract eligibility criteria automatically</p>
+                </div>
+                <div id="file-status" class="hidden mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700"></div>
+                <div id="file-error" class="hidden mt-3 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700"></div>
+            </div>
+
+            <!-- Trial Info -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">📋 Trial Information</h2>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Phase</label>
+                        <select id="trial-phase" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                            <option value="">Unknown</option>
+                            <option>Phase 1</option>
+                            <option>Phase 1/2</option>
+                            <option selected>Phase 2</option>
+                            <option>Phase 2/3</option>
+                            <option>Phase 3</option>
+                            <option>Phase 4</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Condition</label>
+                        <input type="text" id="trial-condition" placeholder="e.g., Type 2 Diabetes" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Region (for R-Index)</label>
+                        <select id="trial-region" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500" onchange="updateDemographicsFields()">
+                            <option value="US" selected>🇺🇸 United States</option>
+                            <option value="EU">🇪🇺 European Union (EU27)</option>
+                            <option value="India">🇮🇳 India</option>
+                            <option value="China">🇨🇳 China</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Eligibility Criteria -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">📝 Eligibility Criteria <span class="text-red-500">*</span></h2>
+                <textarea id="eligibility-text" placeholder="Paste inclusion and exclusion criteria here...
+
+Example:
+INCLUSION CRITERIA:
+- Adults aged 18-75 years
+- Diagnosis of Type 2 Diabetes
+
+EXCLUSION CRITERIA:
+- Pregnant or breastfeeding women
+- Unable to provide informed consent
+- Must be able to speak English" rows="14" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-sm"></textarea>
+            </div>
+
+            <!-- Demographics (Optional) -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <h2 class="text-lg font-semibold text-gray-800">📊 Trial Demographics</h2>
+                        <p class="text-sm text-gray-500">Optional - provide to calculate R-Index</p>
+                    </div>
+                    <button onclick="toggleDemographics()" class="text-blue-600 text-sm font-medium">Show/Hide</button>
+                </div>
+                
+                <div id="demographics-section" class="hidden space-y-4">
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Sex (%)</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <input type="number" id="pct-female" placeholder="Female %" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg" onchange="syncSex('female')">
+                            <input type="number" id="pct-male" placeholder="Male %" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg" onchange="syncSex('male')">
+                        </div>
+                    </div>
+                    <div>
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Age Groups (%)</h3>
+                        <div class="grid grid-cols-4 gap-4">
+                            <input type="number" id="pct-lt18" placeholder="<18" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-18-44" placeholder="18-44" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-45-64" placeholder="45-64" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-65plus" placeholder="65+" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                        </div>
+                    </div>
+                    <div id="race-section">
+                        <h3 class="text-sm font-medium text-gray-700 mb-2">Race/Ethnicity (%) <span class="text-gray-400 font-normal">- US only</span></h3>
+                        <div class="grid grid-cols-4 gap-4">
+                            <input type="number" id="pct-white" placeholder="White" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-black" placeholder="Black" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-asian" placeholder="Asian" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                            <input type="number" id="pct-other" placeholder="Other" min="0" max="100" class="px-3 py-2 border border-gray-300 rounded-lg">
+                        </div>
+                        <p id="race-note" class="hidden text-sm text-gray-500 mt-2 italic">Race/ethnicity data is not tracked for this region's population reference.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Error Display -->
+            <div id="error-display" class="hidden p-4 bg-red-50 border border-red-200 rounded-xl text-red-700"></div>
+
+            <!-- Analyze Button -->
+            <button onclick="runAnalysis()" id="analyze-btn" class="w-full py-4 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl shadow-lg transition-colors flex items-center justify-center gap-2">
+                <span id="analyze-btn-text">Analyze Eligibility Criteria</span>
+                <svg id="analyze-spinner" class="hidden w-5 h-5 spinner" fill="none" viewBox="0 0 24 24">
+                    <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                    <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                </svg>
+            </button>
+        </div>
+
+        <!-- Lookup Tab -->
+        <div id="lookup-tab" class="hidden space-y-6">
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">🔍 Lookup Trial by ID</h2>
+                <p class="text-sm text-gray-500 mb-4">Enter a trial ID to retrieve data from our database. Supports both formats:</p>
+                <div class="flex gap-2 mb-4">
+                    <span class="px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-sm">🇺🇸 NCT12345678 (US/AACT)</span>
+                    <span class="px-3 py-1 bg-green-100 text-green-700 rounded-full text-sm">🇪🇺 2004-000137-11 (EU/EudraCT)</span>
+                </div>
+                <div class="flex gap-4">
+                    <input type="text" id="nct-id-input" placeholder="NCT12345678 or 2004-000137-11" class="flex-1 px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 font-mono text-lg" onkeypress="if(event.key==='Enter')lookupTrial()">
+                    <button onclick="lookupTrial()" id="lookup-btn" class="px-8 py-3 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-xl transition-colors flex items-center gap-2">
+                        <span id="lookup-btn-text">Lookup</span>
+                        <svg id="lookup-spinner" class="hidden w-5 h-5 spinner" fill="none" viewBox="0 0 24 24">
+                            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Lookup Error -->
+            <div id="lookup-error" class="hidden p-4 bg-red-50 border border-red-200 rounded-xl text-red-700"></div>
+        </div>
+
+        <!-- Results Tab -->
+        <div id="results-tab" class="hidden space-y-6 fade-in">
+            <!-- Trial Info Header -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                <div class="flex flex-wrap items-center gap-4 md:gap-8">
+                    <div>
+                        <div class="text-sm text-gray-500">Trial ID</div>
+                        <div id="result-trial-id" class="text-xl font-bold text-blue-600">-</div>
+                    </div>
+                    <div>
+                        <div class="text-sm text-gray-500">Phase</div>
+                        <div id="result-phase" class="text-xl font-bold text-gray-800">-</div>
+                    </div>
+                    <div class="flex-1">
+                        <div class="text-sm text-gray-500">Condition</div>
+                        <div id="result-condition" class="text-lg font-semibold text-gray-700 truncate">-</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-3 gap-4">
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <div class="text-sm text-gray-500">Gates Detected</div>
+                    <div id="result-gates-count" class="text-3xl font-bold text-gray-800">0</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <div class="text-sm text-gray-500">Gating Score</div>
+                    <div id="result-gating-score" class="text-3xl font-bold text-gray-800">0</div>
+                </div>
+                <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-5">
+                    <div class="text-sm text-gray-500">R-Index (Overall)</div>
+                    <div id="result-rindex" class="text-3xl font-bold text-gray-400">N/A</div>
+                </div>
+            </div>
+
+            <!-- R-Index Details -->
+            <div id="rindex-section" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Representativeness Index (R-Index)</h2>
+                <div class="grid grid-cols-3 gap-6">
+                    <div class="text-center">
+                        <div class="text-sm text-gray-500 mb-1">Sex</div>
+                        <div id="rindex-sex" class="text-2xl font-bold text-gray-400">N/A</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div id="rindex-sex-bar" class="h-2 rounded-full bg-gray-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div class="text-center">
+                        <div class="text-sm text-gray-500 mb-1">Age</div>
+                        <div id="rindex-age" class="text-2xl font-bold text-gray-400">N/A</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div id="rindex-age-bar" class="h-2 rounded-full bg-gray-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                    <div id="rindex-race-container" class="text-center">
+                        <div class="text-sm text-gray-500 mb-1">Race</div>
+                        <div id="rindex-race" class="text-2xl font-bold text-gray-400">N/A</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-2">
+                            <div id="rindex-race-bar" class="h-2 rounded-full bg-gray-300" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+                <p id="rindex-comparison-text" class="text-sm text-gray-500 mt-4 text-center">Compared to US population (2023 Census). Higher = more representative.</p>
+            </div>
+
+            <!-- Missing Info Warning -->
+            <div id="missing-info-section" class="hidden bg-yellow-50 rounded-xl border border-yellow-200 p-4">
+                <h3 class="text-sm font-semibold text-yellow-800 mb-2">⚠️ Missing Information</h3>
+                <p id="missing-info-text" class="text-sm text-yellow-700"></p>
+            </div>
+
+            <!-- LLM Analysis -->
+            <div id="llm-section" class="hidden bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">🤖 AI Analysis</h2>
+                <div id="llm-summary" class="p-4 bg-blue-50 rounded-lg text-gray-700 mb-4"></div>
+                <div id="llm-gates" class="space-y-3"></div>
+            </div>
+
+            <!-- Detected Gates -->
+            <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-6">
+                <h2 class="text-lg font-semibold text-gray-800 mb-4">Detected Eligibility Gates</h2>
+                <div id="gates-list" class="space-y-3"></div>
+                <div id="no-gates" class="hidden text-center py-8 text-gray-500">
+                    <div class="text-4xl mb-3">✓</div>
+                    <p>No eligibility gates detected</p>
+                </div>
+            </div>
+
+            <!-- Actions -->
+            <div class="flex gap-4">
+                <button onclick="exportJSON()" class="flex-1 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium rounded-xl transition-colors">
+                    📥 Export JSON
+                </button>
+                <button onclick="resetForm()" class="flex-1 py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-xl transition-colors">
+                    ← Analyze Another Trial
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <!-- Footer -->
+    <footer class="mt-12 py-6 border-t border-gray-200 text-center text-sm text-gray-500">
+        <p>TrialFair v1.0 • Clinical Trial Eligibility Criteria Auditor</p>
+        <p class="mt-1">R-Index baseline: US Population (2023 ACS)</p>
+    </footer>
+
+    <script>
+        // API base URL - change this for production
+        const API_BASE = '';  // Empty for same-origin, or set to 'http://localhost:8000' for dev
+
+        let currentResults = null;
+
+        // ============ TAB SWITCHING ============
+        function showTab(tab) {
+            ['input', 'lookup', 'results'].forEach(t => {
+                document.getElementById(t + '-tab').classList.toggle('hidden', t !== tab);
+                const tabBtn = document.getElementById('tab-' + t);
+                if (tabBtn) {
+                    tabBtn.classList.toggle('border-b-2', t === tab);
+                    tabBtn.classList.toggle('border-blue-600', t === tab);
+                    tabBtn.classList.toggle('text-blue-600', t === tab);
+                    tabBtn.classList.toggle('text-gray-500', t !== tab);
+                }
+            });
+            
+            // Show results tab button when we have results
+            if (tab === 'results') {
+                document.getElementById('tab-results').classList.remove('hidden');
+            }
+        }
+
+        function toggleDemographics() {
+            document.getElementById('demographics-section').classList.toggle('hidden');
+        }
+
+        function syncSex(changed) {
+            const femaleEl = document.getElementById('pct-female');
+            const maleEl = document.getElementById('pct-male');
+            if (changed === 'female' && femaleEl.value) {
+                maleEl.value = Math.max(0, 100 - parseFloat(femaleEl.value)).toFixed(0);
+            } else if (changed === 'male' && maleEl.value) {
+                femaleEl.value = Math.max(0, 100 - parseFloat(maleEl.value)).toFixed(0);
+            }
+        }
+
+        function showError(elementId, message) {
+            const el = document.getElementById(elementId);
+            if (message) {
+                el.textContent = message;
+                el.classList.remove('hidden');
+            } else {
+                el.classList.add('hidden');
+            }
+        }
+
+        function setLoading(buttonId, spinnerId, textId, loading) {
+            const btn = document.getElementById(buttonId);
+            const spinner = document.getElementById(spinnerId);
+            const text = document.getElementById(textId);
+            
+            btn.disabled = loading;
+            btn.classList.toggle('loading', loading);
+            spinner.classList.toggle('hidden', !loading);
+        }
+
+        // ============ REGION-BASED DEMOGRAPHICS ============
+        function updateDemographicsFields() {
+            const region = document.getElementById('trial-region').value;
+            const raceSection = document.getElementById('race-section');
+            const raceNote = document.getElementById('race-note');
+            const raceInputs = raceSection.querySelectorAll('input');
+            
+            if (region === 'US') {
+                // Show race fields for US
+                raceInputs.forEach(input => {
+                    input.disabled = false;
+                    input.classList.remove('bg-gray-100', 'text-gray-400');
+                });
+                raceNote.classList.add('hidden');
+            } else {
+                // Hide/disable race fields for other regions
+                raceInputs.forEach(input => {
+                    input.disabled = true;
+                    input.value = '';
+                    input.classList.add('bg-gray-100', 'text-gray-400');
+                });
+                raceNote.classList.remove('hidden');
+            }
+        }
+
+        // ============ API CALLS ============
+        async function runAnalysis() {
+            const eligibilityText = document.getElementById('eligibility-text').value.trim();
+            
+            if (!eligibilityText) {
+                showError('error-display', 'Please enter eligibility criteria text');
+                return;
+            }
+            showError('error-display', '');
+            
+            const region = document.getElementById('trial-region').value;
+            
+            // Gather demographics if provided
+            const demographics = {};
+            const pctFemale = parseFloat(document.getElementById('pct-female').value);
+            const pctMale = parseFloat(document.getElementById('pct-male').value);
+            if (!isNaN(pctFemale)) demographics.sex_female = pctFemale / 100;
+            if (!isNaN(pctMale)) demographics.sex_male = pctMale / 100;
+            
+            const pctLt18 = parseFloat(document.getElementById('pct-lt18').value);
+            const pct1844 = parseFloat(document.getElementById('pct-18-44').value);
+            const pct4564 = parseFloat(document.getElementById('pct-45-64').value);
+            const pct65plus = parseFloat(document.getElementById('pct-65plus').value);
+            if (!isNaN(pctLt18)) demographics.age_lt18 = pctLt18 / 100;
+            if (!isNaN(pct1844)) demographics.age_18_44 = pct1844 / 100;
+            if (!isNaN(pct4564)) demographics.age_45_64 = pct4564 / 100;
+            if (!isNaN(pct65plus)) demographics.age_65plus = pct65plus / 100;
+            
+            // Only collect race data for US
+            if (region === 'US') {
+                const pctWhite = parseFloat(document.getElementById('pct-white').value);
+                const pctBlack = parseFloat(document.getElementById('pct-black').value);
+                const pctAsian = parseFloat(document.getElementById('pct-asian').value);
+                const pctOther = parseFloat(document.getElementById('pct-other').value);
+                if (!isNaN(pctWhite)) demographics.race_white = pctWhite / 100;
+                if (!isNaN(pctBlack)) demographics.race_black = pctBlack / 100;
+                if (!isNaN(pctAsian)) demographics.race_asian = pctAsian / 100;
+                if (!isNaN(pctOther)) demographics.race_other = pctOther / 100;
+            }
+
+            const payload = {
+                eligibility_text: eligibilityText,
+                phase: document.getElementById('trial-phase').value || null,
+                condition: document.getElementById('trial-condition').value || null,
+                demographics: Object.keys(demographics).length > 0 ? demographics : null,
+                region: region,
+            };
+
+            setLoading('analyze-btn', 'analyze-spinner', 'analyze-btn-text', true);
+
+            try {
+                const response = await fetch(API_BASE + '/api/analyze', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload),
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Analysis failed');
+                }
+
+                currentResults = await response.json();
+                currentResults.trial_id = 'Manual Entry';
+                displayResults();
+                showTab('results');
+
+            } catch (error) {
+                showError('error-display', 'Error: ' + error.message);
+            } finally {
+                setLoading('analyze-btn', 'analyze-spinner', 'analyze-btn-text', false);
+            }
+        }
+
+        async function lookupTrial() {
+            const nctId = document.getElementById('nct-id-input').value.trim();
+            
+            if (!nctId) {
+                showError('lookup-error', 'Please enter an NCT ID');
+                return;
+            }
+            showError('lookup-error', '');
+
+            setLoading('lookup-btn', 'lookup-spinner', 'lookup-btn-text', true);
+
+            try {
+                const response = await fetch(API_BASE + '/api/lookup/' + encodeURIComponent(nctId));
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Lookup failed');
+                }
+
+                currentResults = await response.json();
+                currentResults.trial_id = currentResults.trial_id || currentResults.nct_id || currentResults.eudract_id;
+                displayResults();
+                showTab('results');
+
+            } catch (error) {
+                showError('lookup-error', 'Error: ' + error.message);
+            } finally {
+                setLoading('lookup-btn', 'lookup-spinner', 'lookup-btn-text', false);
+            }
+        }
+
+        // ============ DISPLAY RESULTS ============
+        function displayResults() {
+            if (!currentResults) return;
+
+            const { gates, gating_score, rindex, llm_analysis, trial_id, metadata, raw_trial_data, source } = currentResults;
+
+            // Trial info header
+            document.getElementById('result-trial-id').textContent = trial_id || '-';
+            
+            // Get phase and condition from metadata or raw_trial_data
+            const phase = metadata?.phase || raw_trial_data?.phase || raw_trial_data?.phase_norm || '-';
+            const condition = metadata?.condition || raw_trial_data?.brief_title || raw_trial_data?.trial_title || raw_trial_data?.condition || '-';
+            const region = rindex?.region || metadata?.region || (source === 'EU' ? 'EU' : 'US');
+            
+            document.getElementById('result-phase').textContent = phase || '-';
+            document.getElementById('result-condition').textContent = condition || '-';
+
+            // Summary cards
+            document.getElementById('result-gates-count').textContent = gates.length;
+            document.getElementById('result-gating-score').textContent = gating_score;
+            document.getElementById('result-gating-score').className = 'text-3xl font-bold ' + 
+                (gating_score > 5 ? 'text-red-600' : gating_score > 2 ? 'text-yellow-600' : 'text-green-600');
+
+            // R-Index
+            if (rindex && rindex.r_overall !== null) {
+                const pct = Math.round(rindex.r_overall * 100);
+                document.getElementById('result-rindex').textContent = pct + '%';
+                document.getElementById('result-rindex').className = 'text-3xl font-bold ' +
+                    (rindex.r_overall >= 0.8 ? 'text-green-600' : rindex.r_overall >= 0.6 ? 'text-yellow-600' : 'text-red-600');
+                document.getElementById('rindex-section').classList.remove('hidden');
+
+                updateRIndexBar('sex', rindex.r_sex);
+                updateRIndexBar('age', rindex.r_age);
+                
+                // Handle race - only show for US
+                const raceContainer = document.getElementById('rindex-race-container');
+                if (region === 'US') {
+                    raceContainer.classList.remove('hidden');
+                    updateRIndexBar('race', rindex.r_race);
+                } else {
+                    raceContainer.classList.add('hidden');
+                }
+                
+                // Update comparison text based on region
+                const regionNames = {
+                    'US': 'US population (2023 Census)',
+                    'EU': 'EU27 population (2020 Eurostat)',
+                    'India': 'India population (UN WPP 2023)',
+                    'China': 'China population (UN WPP 2023)'
+                };
+                document.getElementById('rindex-comparison-text').textContent = 
+                    `Compared to ${regionNames[region] || region}. Higher = more representative.`;
+                    
+            } else {
+                document.getElementById('result-rindex').textContent = 'N/A';
+                document.getElementById('result-rindex').className = 'text-3xl font-bold text-gray-400';
+                document.getElementById('rindex-section').classList.add('hidden');
+            }
+
+            // Show missing info warning
+            displayMissingInfo(rindex, metadata, currentResults.demographics);
+
+            // LLM Analysis
+            if (llm_analysis) {
+                document.getElementById('llm-section').classList.remove('hidden');
+                document.getElementById('llm-summary').textContent = llm_analysis.overall_summary || 'Analysis complete.';
+                
+                const llmGatesHtml = (llm_analysis.gate_analyses || []).map(ga => `
+                    <div class="p-4 bg-gray-50 rounded-lg">
+                        <div class="font-medium text-gray-800">${ga.gate_type.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</div>
+                        <p class="text-sm text-gray-600 mt-1">${ga.explanation}</p>
+                        ${ga.over_broad ? `<p class="text-sm text-orange-600 mt-2">⚠️ Potentially over-broad</p>` : ''}
+                        ${ga.suggested_revision ? `<p class="text-sm text-green-700 mt-2 italic">💡 Suggestion: ${ga.suggested_revision}</p>` : ''}
+                    </div>
+                `).join('');
+                document.getElementById('llm-gates').innerHTML = llmGatesHtml;
+            } else {
+                document.getElementById('llm-section').classList.add('hidden');
+            }
+
+            // Gates list
+            const gatesList = document.getElementById('gates-list');
+            const noGates = document.getElementById('no-gates');
+
+            if (gates.length === 0) {
+                gatesList.innerHTML = '';
+                noGates.classList.remove('hidden');
+            } else {
+                noGates.classList.add('hidden');
+                gatesList.innerHTML = gates.map((gate, idx) => `
+                    <div class="gate-card border rounded-lg overflow-hidden ${gate.exception_applies ? 'border-green-200 bg-green-50' : 'border-gray-200'}">
+                        <div class="px-4 py-3 flex items-center justify-between cursor-pointer hover:bg-gray-50" onclick="toggleGate(${idx})">
+                            <div class="flex items-center gap-3">
+                                <span class="px-2 py-1 text-xs rounded-full ${getSeverityClass(gate.severity, gate.exception_applies)}">
+                                    ${gate.exception_applies ? 'Exception' : 'Severity ' + gate.severity}
+                                </span>
+                                <span class="font-medium text-gray-800">${gate.label}</span>
+                            </div>
+                            <span id="gate-arrow-${idx}" class="text-gray-400">▼</span>
+                        </div>
+                        <div id="gate-details-${idx}" class="hidden px-4 pb-4 border-t border-gray-100">
+                            ${gate.evidence ? `
+                                <div class="mt-3">
+                                    <h4 class="text-sm font-medium text-gray-700 mb-1">Evidence</h4>
+                                    <p class="evidence-text text-gray-600 bg-gray-50 p-3 rounded-lg">${escapeHtml(gate.evidence)}</p>
+                                </div>
+                            ` : ''}
+                            ${gate.exception_applies && gate.exception_matches && gate.exception_matches.length > 0 ? `
+                                <div class="mt-3">
+                                    <h4 class="text-sm font-medium text-gray-700 mb-1">Exception Reason</h4>
+                                    <p class="text-sm text-green-700 bg-green-50 p-3 rounded-lg">${gate.exception_matches[0].reason || 'Potentially justified based on trial characteristics'}</p>
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('');
+            }
+        }
+
+        function updateRIndexBar(type, value) {
+            const textEl = document.getElementById('rindex-' + type);
+            const barEl = document.getElementById('rindex-' + type + '-bar');
+            
+            if (value === null || value === undefined) {
+                textEl.textContent = 'N/A';
+                textEl.className = 'text-2xl font-bold text-gray-400';
+                barEl.style.width = '0%';
+                barEl.className = 'h-2 rounded-full bg-gray-300';
+            } else {
+                const pct = Math.round(value * 100);
+                textEl.textContent = pct + '%';
+                textEl.className = 'text-2xl font-bold ' + 
+                    (value >= 0.8 ? 'text-green-600' : value >= 0.6 ? 'text-yellow-600' : 'text-red-600');
+                barEl.style.width = pct + '%';
+                barEl.className = 'h-2 rounded-full ' +
+                    (value >= 0.8 ? 'bg-green-500' : value >= 0.6 ? 'bg-yellow-500' : 'bg-red-500');
+            }
+        }
+
+        function getSeverityClass(severity, hasException) {
+            if (hasException) return 'bg-green-100 text-green-700';
+            if (severity >= 3) return 'bg-orange-100 text-orange-700';
+            if (severity >= 2) return 'bg-yellow-100 text-yellow-700';
+            return 'bg-gray-100 text-gray-700';
+        }
+
+        function toggleGate(idx) {
+            const details = document.getElementById('gate-details-' + idx);
+            const arrow = document.getElementById('gate-arrow-' + idx);
+            details.classList.toggle('hidden');
+            arrow.textContent = details.classList.contains('hidden') ? '▼' : '▲';
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // ============ FILE UPLOAD ============
+        async function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const statusEl = document.getElementById('file-status');
+            const errorEl = document.getElementById('file-error');
+            statusEl.classList.add('hidden');
+            errorEl.classList.add('hidden');
+
+            const fileName = file.name.toLowerCase();
+
+            if (fileName.endsWith('.pdf')) {
+                // Upload PDF to backend for smart extraction
+                statusEl.innerHTML = '⏳ Extracting information from PDF... (this may take a moment)';
+                statusEl.classList.remove('hidden');
+                statusEl.className = 'mt-3 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700';
+
+                const formData = new FormData();
+                formData.append('file', file);
+
+                try {
+                    const response = await fetch(API_BASE + '/api/extract-pdf', {
+                        method: 'POST',
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        const error = await response.json();
+                        throw new Error(error.detail || 'PDF extraction failed');
+                    }
+
+                    const data = await response.json();
+                    
+                    // Fill in extracted fields
+                    if (data.eligibility_criteria) {
+                        document.getElementById('eligibility-text').value = data.eligibility_criteria;
+                    }
+                    if (data.phase) {
+                        const phaseSelect = document.getElementById('trial-phase');
+                        const phaseNum = data.phase.toString().replace(/[^0-9\/]/g, '');
+                        for (let opt of phaseSelect.options) {
+                            if (opt.value.includes(phaseNum) || opt.value.toLowerCase().includes(data.phase.toLowerCase())) {
+                                phaseSelect.value = opt.value;
+                                break;
+                            }
+                        }
+                    }
+                    if (data.condition) {
+                        document.getElementById('trial-condition').value = data.condition;
+                    }
+                    
+                    // Set region if detected
+                    if (data.region && ['US', 'EU', 'India', 'China'].includes(data.region)) {
+                        document.getElementById('trial-region').value = data.region;
+                        updateDemographicsFields(); // Update race field visibility
+                    }
+                    
+                    // Fill demographics if found
+                    if (data.demographics) {
+                        const demoSection = document.getElementById('demographics-section');
+                        if (data.demographics.pct_female) document.getElementById('pct-female').value = data.demographics.pct_female;
+                        if (data.demographics.pct_male) document.getElementById('pct-male').value = data.demographics.pct_male;
+                        if (data.demographics.pct_white) document.getElementById('pct-white').value = data.demographics.pct_white;
+                        if (data.demographics.pct_black) document.getElementById('pct-black').value = data.demographics.pct_black;
+                        if (data.demographics.pct_asian) document.getElementById('pct-asian').value = data.demographics.pct_asian;
+                        if (data.demographics.pct_other) document.getElementById('pct-other').value = data.demographics.pct_other;
+                        if (Object.values(data.demographics).some(v => v !== null)) {
+                            demoSection.classList.remove('hidden');
+                        }
+                    }
+                    
+                    // Show success with missing fields info
+                    statusEl.className = 'mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700';
+                    
+                    let statusMsg = '✓ Extracted information from PDF';
+                    if (data.nct_id) statusMsg += ` (${data.nct_id})`;
+                    if (data.region) {
+                        const regionNames = {'US': '🇺🇸 US', 'EU': '🇪🇺 EU', 'India': '🇮🇳 India', 'China': '🇨🇳 China'};
+                        statusMsg += ` | Region: ${regionNames[data.region] || data.region}`;
+                    }
+                    
+                    if (data.missing_fields && data.missing_fields.length > 0) {
+                        statusMsg += `<br><span class="text-yellow-700 text-sm">⚠️ Could not find: ${data.missing_fields.join(', ')}</span>`;
+                        statusMsg += '<br><span class="text-gray-500 text-sm">Please fill in any missing fields below.</span>';
+                    }
+                    
+                    statusEl.innerHTML = statusMsg;
+                    
+                } catch (error) {
+                    errorEl.textContent = 'Error: ' + error.message;
+                    errorEl.classList.remove('hidden');
+                    statusEl.classList.add('hidden');
+                }
+            } else if (fileName.endsWith('.txt')) {
+                // Read text file directly
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('eligibility-text').value = e.target.result;
+                    statusEl.innerHTML = '✓ Loaded text file<br><span class="text-gray-500 text-sm">Please fill in Phase and Condition below.</span>';
+                    statusEl.className = 'mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700';
+                    statusEl.classList.remove('hidden');
+                };
+                reader.readAsText(file);
+            } else if (fileName.endsWith('.json')) {
+                // Parse JSON file (supports ClinicalTrials.gov format)
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    try {
+                        const data = JSON.parse(e.target.result);
+                        let eligText = null, phase = null, condition = null;
+                        const missing = [];
+                        
+                        // Format 1: ClinicalTrials.gov API format
+                        if (data.protocolSection) {
+                            const proto = data.protocolSection;
+                            eligText = proto.eligibilityModule?.eligibilityCriteria;
+                            phase = proto.designModule?.phases?.[0];
+                            condition = proto.conditionsModule?.conditions?.[0] || proto.identificationModule?.briefTitle;
+                        } else {
+                            // Format 2: Simple format
+                            eligText = data.eligibility_text || data.eligibility_criteria || data.eligibilityCriteria;
+                            phase = data.phase;
+                            condition = data.condition || data.conditions?.[0];
+                        }
+                        
+                        if (eligText) {
+                            document.getElementById('eligibility-text').value = eligText;
+                        } else {
+                            missing.push('Eligibility Criteria');
+                        }
+                        
+                        if (phase) {
+                            const phaseSelect = document.getElementById('trial-phase');
+                            const phaseNum = phase.toString().replace(/[^0-9\/]/g, '');
+                            for (let opt of phaseSelect.options) {
+                                if (opt.value.includes(phaseNum)) {
+                                    phaseSelect.value = opt.value;
+                                    break;
+                                }
+                            }
+                        } else {
+                            missing.push('Phase');
+                        }
+                        
+                        if (condition) {
+                            document.getElementById('trial-condition').value = condition;
+                        } else {
+                            missing.push('Condition');
+                        }
+                        
+                        statusEl.className = 'mt-3 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700';
+                        let statusMsg = '✓ Loaded JSON file';
+                        if (missing.length > 0) {
+                            statusMsg += `<br><span class="text-yellow-700 text-sm">⚠️ Missing: ${missing.join(', ')}</span>`;
+                        }
+                        statusEl.innerHTML = statusMsg;
+                        statusEl.classList.remove('hidden');
+                        
+                    } catch (err) {
+                        errorEl.textContent = 'Error parsing JSON: ' + err.message;
+                        errorEl.classList.remove('hidden');
+                    }
+                };
+                reader.readAsText(file);
+            } else {
+                errorEl.textContent = 'Unsupported file type. Please upload PDF, TXT, or JSON.';
+                errorEl.classList.remove('hidden');
+            }
+        }
+
+        // ============ MISSING INFO DISPLAY ============
+        function displayMissingInfo(rindex, metadata, demographics) {
+            const missing = [];
+            
+            if (!metadata?.phase || metadata.phase === '-') missing.push('Phase');
+            if (!metadata?.condition || metadata.condition === '-') missing.push('Condition');
+            if (!rindex?.r_sex) missing.push('Sex demographics');
+            if (!rindex?.r_age) missing.push('Age demographics');
+            if (!rindex?.r_race) missing.push('Race demographics');
+            
+            const section = document.getElementById('missing-info-section');
+            const text = document.getElementById('missing-info-text');
+            
+            if (missing.length > 0) {
+                text.textContent = 'The following information was not provided: ' + missing.join(', ') + '. R-Index calculation may be incomplete.';
+                section.classList.remove('hidden');
+            } else {
+                section.classList.add('hidden');
+            }
+        }
+
+        function exportJSON() {
+            if (!currentResults) return;
+            const blob = new Blob([JSON.stringify(currentResults, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = (currentResults.trial_id || 'trial') + '_report.json';
+            a.click();
+            URL.revokeObjectURL(url);
+        }
+
+        function resetForm() {
+            showTab('input');
+            document.getElementById('tab-results').classList.add('hidden');
+        }
+
+        // Check API health on load
+        fetch(API_BASE + '/api/health')
+            .then(r => r.json())
+            .then(data => {
+                console.log('API Status:', data);
+                if (!data.openai_configured) {
+                    console.warn('OpenAI not configured - LLM analysis will be unavailable');
+                }
+            })
+            .catch(err => console.error('API not reachable:', err));
+    </script>
+</body>
+</html>
